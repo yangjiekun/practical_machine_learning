@@ -1,0 +1,109 @@
+---
+title: "Weight Lifting Manner Prediction"
+author: "Jackie Yang"
+date: "Wednesday, October 15, 2014"
+output: html_document
+---
+
+### Background
+
+The data for this project come from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants, who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website [here](http://groupware.les.inf.puc-rio.br/har). We will build a machine learning algorithm to predict the manner in which they did the exercise based on a training data set. The model will be evaluated by predicting 20 different test cases. 
+
+### Data Loading
+
+```{r}
+# Load libraries
+library(caret)
+library(corrplot)
+# Download data
+#if(!file.exists("data")) {
+        #dir.create("data")
+#}
+#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "./data/train.csv")
+#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "./data/test.csv")
+#list.files("./data")
+#date()
+# Load Data
+train <- read.csv("./data/train.csv", header = TRUE, na.strings = c("NA", ""))
+test <- read.csv("./data/test.csv", header = TRUE, na.strings = c("NA", ""))
+dim(train)
+```
+
+### Data Cleaning
+
+```{r}
+# Handle missing values
+missing <- colSums(is.na(train))
+unique(missing)
+sum(missing == 19216)
+train <- train[, missing == 0]
+test <- test[, missing == 0]
+dim(train)
+# Remove unrelevant variables
+names(train)
+train <- train[, -c(1:7)]
+test <- test[, -c(1:7)]
+# Make sure the predictors are numeric
+str(train$classe)
+sum(sapply(train, is.numeric))
+```
+
+### Variable Selection
+
+```{r}
+# Remove highly correlated variables (r > 0.5)
+corVar <- findCorrelation(cor(train[, -length(train)]), cutoff = 0.5)
+train <- train[, -corVar]
+test <- test[, -corVar]
+corrplot(cor(train[, -length(train)]), method = "circle", type = "lower")
+```
+
+We have **`r ncol(train)-1`** predictors left in the training dataset, which is a good number for model fitting. 
+
+### Data Partition and Model Fitting
+
+```{r}
+# Partition the training dataset in 70% training and 30% cross validation
+inTrain <- createDataPartition(train$classe, p = 0.7, list = FALSE)
+trainSub <- train[inTrain,]
+crossVal <- train[-inTrain,]
+# Fit the training data using Random Forests algorithm for accuracy
+modFit <- train(classe ~ ., method = "rf", data = trainSub, 
+                trControl = trainControl(method = "cv"), importance = TRUE)
+# Plot predictor importance
+varImpPlot(modFit$finalModel, sort = TRUE, type = 1, pch = 19, col = "blue")
+```
+
+### Model Validation
+
+```{r}
+pred <- predict(modFit, crossVal)
+confMat <- confusionMatrix(pred, crossVal$classe)
+confMat$table
+```
+
+This model has an accuracy of **`r confMat$overall[[1]]`** and an out-of-sample error of **`r 1-confMat$overall[[1]]`**.
+
+### Test Data Prediction
+
+```{r}
+answers <- predict(modFit, test)
+answers
+# Create submission files
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+if(!file.exists("answers")) {
+        dir.create("answers")
+}
+setwd("./answers")
+pml_write_files(answers)
+```
+
+### Conclusion
+
+We built a Random Forest machine learning model to predict weight lifting manners. This model has an accuracy of **`r confMat$overall[[1]]`** and an out-of-sample error of **`r 1-confMat$overall[[1]]`**. After submitting results to coursera, we got all the predictions right.
